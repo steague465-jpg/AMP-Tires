@@ -781,6 +781,24 @@ def write_excel(listings, domains, by_store, out_path):
     wb.save(out_path)
 
 
+def listings_from_shopapp(hits):
+    out = []
+    for h in hits.values():
+        title = h.get("title") or h["handle"].replace("-", " ")
+        out.append(make_listing(h.get("store") or "UNKNOWN STORE", "", h["product_id"], h.get("variant_id"),
+                                title, "", h.get("price"), h.get("compare_at"), None, h["url"],
+                                "shop.app", parse_qty(title)))
+    return out
+
+
+def save_outputs(listings, domains, by_store, out_path):
+    write_excel(listings, domains, by_store, out_path)
+    with open(out_path.replace(".xlsx", ".csv"), "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(listings[0].keys()))
+        w.writeheader()
+        w.writerows(listings)
+
+
 # ----------------------------------------------------------------- main
 def main():
     global SHIP_ZIP
@@ -792,6 +810,8 @@ def main():
     ap.add_argument("--max-catalog-pages", type=int, default=40,
                     help="fallback full-catalog crawl limit per store (250 products per page)")
     ap.add_argument("--zip", default=SHIP_ZIP, help="zip code for shipping quotes")
+    ap.add_argument("--shopapp-only", action="store_true",
+                    help="only use shop.app listing data (fast, no store sites, no shipping check)")
     ap.add_argument("--out", default="amp_prices.xlsx")
     args = ap.parse_args()
 
@@ -802,6 +822,18 @@ def main():
     if not hits:
         sys.exit("No AMP listings found on shop.app. Try --headful to see what the page shows.")
     print(f"  {len(hits)} AMP listings from shop.app")
+
+    shop_listings = listings_from_shopapp(hits)
+    flag_outliers(shop_listings)
+    shop_by_store = defaultdict(list)
+    for h in hits.values():
+        shop_by_store[h.get("store") or "UNKNOWN STORE"].append(h)
+    shop_out = args.out if args.shopapp_only else args.out.replace(".xlsx", "_shopapp.xlsx")
+    save_outputs(shop_listings, {}, shop_by_store, shop_out)
+    print(f"  saved shop.app listings to {shop_out}")
+    if args.shopapp_only:
+        print(f"\nDone. Open {shop_out} (Beat Price tab first).")
+        return
 
     print("Step 2/4: finding each store's website")
     domains, by_store = stage_domains(hits, args.headful)
@@ -814,11 +846,7 @@ def main():
     print("Step 4/4: checking shipping")
     stage_shipping(listings, args.ship_top)
 
-    write_excel(listings, domains, by_store, args.out)
-    with open(args.out.replace(".xlsx", ".csv"), "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=list(listings[0].keys()))
-        w.writeheader()
-        w.writerows(listings)
+    save_outputs(listings, domains, by_store, args.out)
     print(f"\nDone. Open {args.out} (Beat Price tab first).")
 
 

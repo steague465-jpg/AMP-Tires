@@ -6,6 +6,11 @@ on:
       zip:
         description: "Zip code for shipping quotes"
         default: "60563"
+      mode:
+        description: "shopapp-only = shop.app prices only (fast). full = also store sites + shipping (slow)"
+        type: choice
+        options: [shopapp-only, full]
+        default: shopapp-only
       ship_top:
         description: "Check shipping on N cheapest per size (0 = all)"
         default: "5"
@@ -35,7 +40,8 @@ jobs:
         run: |
           python -u amp_price_scraper.py \
             --zip "${{ github.event.inputs.zip || '60563' }}" \
-            --ship-top "${{ github.event.inputs.ship_top || '5' }}"
+            --ship-top "${{ github.event.inputs.ship_top || '5' }}" \
+            ${{ (github.event.inputs.mode || 'shopapp-only') == 'shopapp-only' && '--shopapp-only' || '' }}
 
       - name: Upload spreadsheet
         if: always()
@@ -43,7 +49,7 @@ jobs:
         with:
           name: amp-prices
           path: |
-            amp_prices.xlsx
+            amp_prices*.xlsx
             amp_prices.csv
             store_domains.csv
             amp_cache/
