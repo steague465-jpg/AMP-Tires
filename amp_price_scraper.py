@@ -73,7 +73,7 @@ IGNORE_HOST_PARTS = ["shop.app", "shopify.com", "shopifycdn", "shopifysvc", "sho
 
 # ----------------------------------------------------------------- parsing helpers
 METRIC_RE = re.compile(r"(?<![\d.])(LT|P)?\s*(\d{3})\s*[/\-xX]\s*(\d{2})\s*Z?R\s*-?\s*(\d{2})(?!\d)", re.I)
-FLOAT_RE = re.compile(r"(?<![\d.])(\d{2}(?:\.\d)?)\s*[xX]\s*(\d{1,2}(?:\.\d{1,2})?)\s*-?\s*R?\s*(\d{2})(?:\s*LT)?(?![\d.])", re.I)
+FLOAT_RE = re.compile(r"(?<![\d.])(\d{2}(?:\.\d)?)\s*[xX]\s*(\d{1,2}(?:\.\d{1,2})?)(?![\d.])\s*(?:-|X?R|X)?\s*(\d{2})(?:\s*LT)?(?![\d.])", re.I)
 
 
 def parse_size(text):
@@ -118,7 +118,7 @@ def classify_model(text):
         return "Terrain Pro A/T P"
     if "attack" in t or re.search(r"\bata\b", t) or "a/t a" in t:
         return "Terrain Attack A/T A"
-    if "a/t" in t or re.search(r"\bat\b", t):
+    if "a/t" in t or re.search(r"\bat\b", t) or "all terrain" in t or "all-terrain" in t:
         return "A/T (check model)"
     return "Unknown"
 
