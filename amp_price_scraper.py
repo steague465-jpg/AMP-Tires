@@ -63,6 +63,9 @@ COMMON_SIZES = ["35x12.50R20", "33x12.50R20", "37x13.50R20", "35x12.50R22", "37x
                 "33x12.50R24", "35x12.50R24", "35x12.50R17", "37x12.50R17", "35x12.50R18",
                 "285/70R17", "265/70R17", "275/65R20", "275/70R18", "285/65R18", "305/35R24"]
 
+# Shipping per tire you've confirmed for each store (edit store_shipping.csv to add more).
+SHIPPING_FILE = "store_shipping.csv"
+
 CACHE_DIR = "amp_cache"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/128.0 Safari/537.36")
@@ -712,47 +715,43 @@ def write_excel(listings, domains, by_store, out_path):
     for k in keys:
         g = groups.get(k, [])
         stores = sorted({l["store"] for l in g})
-        by_sticker = sorted(g, key=lambda x: x["price_per_tire"])
-        landed = sorted([l for l in g if l["landed_per_tire"] is not None], key=lambda x: x["landed_per_tire"])
-        low_s = by_sticker[0] if by_sticker else None
-        low_l = landed[0] if landed else None
-        second = landed[1] if len(landed) > 1 else None
+        # Delivered price: sticker + known shipping. Unknown shipping counts as free (worst case for you).
+        for l in g:
+            l["_delivered"] = l["landed_per_tire"] if l["landed_per_tire"] is not None else l["price_per_tire"]
+        ranked = sorted(g, key=lambda x: x["_delivered"])
+        low = ranked[0] if ranked else None
+        second = ranked[1] if len(ranked) > 1 else None
         yours = min((l["price_per_tire"] for l in own.get(k, []) if l["price_per_tire"]), default=None)
-        target = round(low_l["landed_per_tire"] - UNDERCUT, 2) if low_l else (
-            round(low_s["price_per_tire"] - UNDERCUT, 2) if low_s else None)
-        if low_l:
-            note = ""
-            unconf = [l for l in by_sticker if l["landed_per_tire"] is None
-                      and l["price_per_tire"] < low_l["landed_per_tire"]]
-            if unconf:
-                u = unconf[0]
-                note = f"{u['store']} is ${u['price_per_tire']:.2f} but shipping unconfirmed, check it"
-        elif low_s:
-            note = "shipping not confirmed, target based on sticker price"
-        else:
+        target = round(low["_delivered"] - UNDERCUT, 2) if low else None
+        gap = round(yours - target, 2) if (yours is not None and target is not None) else None
+        if not low:
             note = "no competitors found"
+        elif low["landed_per_tire"] is None:
+            note = "shipping unknown for this store, counted as free. Check it"
+        else:
+            note = ""
+        known = "" if not low else ("yes" if low["landed_per_tire"] is not None else "unknown")
         rows.append([
             k[0], k[1], len(stores),
-            low_s["price_per_tire"] if low_s else None, low_s["store"] if low_s else "",
-            low_l["price_per_tire"] if low_l else None, low_l["ship_per_tire"] if low_l else None,
-            low_l["landed_per_tire"] if low_l else None, low_l["store"] if low_l else "",
-            second["landed_per_tire"] if second else None, second["store"] if second else "",
-            yours, target,
-            note,
-            (low_l or low_s or {}).get("url", ""),
+            low["_delivered"] if low else None, low["store"] if low else "",
+            low["price_per_tire"] if low else None,
+            (low["ship_per_tire"] if low and low["ship_per_tire"] is not None else None), known,
+            second["_delivered"] if second else None, second["store"] if second else "",
+            yours, target, gap, note,
+            low["url"] if low else "",
         ])
     ws = wb.active
     ws.title = "Beat Price"
-    sheet(ws, ["Model", "Size", "# Stores", "Lowest Sticker", "Lowest Sticker Store",
-               "Cheapest Landed: Price", "Ship / Tire", "Landed / Tire", "Cheapest Landed Store",
-               "2nd Landed / Tire", "2nd Store", "Your Current Price", "Target Price", "Note", "Link"],
+    sheet(ws, ["Model", "Size", "# Stores", "Cheapest Delivered / Tire", "Cheapest Store",
+               "Their Price", "Their Ship / Tire", "Shipping Known", "2nd Delivered / Tire", "2nd Store",
+               "Your Current Price", "Target Price", "You vs Target", "Note", "Link"],
           rows,
-          money_cols={"Lowest Sticker", "Cheapest Landed: Price", "Ship / Tire", "Landed / Tire",
-                      "2nd Landed / Tire", "Your Current Price", "Target Price"},
-          widths={"Model": 20, "Size": 13, "Lowest Sticker Store": 24, "Cheapest Landed Store": 24,
-                  "2nd Store": 22, "Note": 40, "Link": 50},
+          money_cols={"Cheapest Delivered / Tire", "Their Price", "Their Ship / Tire",
+                      "2nd Delivered / Tire", "Your Current Price", "Target Price", "You vs Target"},
+          widths={"Model": 20, "Size": 13, "Cheapest Store": 26, "2nd Store": 24, "Note": 44,
+                  "Link": 50, "Cheapest Delivered / Tire": 14},
           link_col="Link")
-    tgt_col = get_column_letter(13)
+    tgt_col = get_column_letter(12)
     for cell in ws[tgt_col][1:]:
         cell.font = Font(bold=True, color="0B6E2E")
 
@@ -779,6 +778,31 @@ def write_excel(listings, domains, by_store, out_path):
           widths={"Store": 30, "Domain": 32})
 
     wb.save(out_path)
+
+
+def load_known_shipping():
+    known = {}
+    try:
+        with open(SHIPPING_FILE, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                name = (row.get("store") or "").strip().lower()
+                val = (row.get("ship_per_tire") or "").strip().replace("$", "")
+                if name and val != "":
+                    known[name] = float(val)
+    except FileNotFoundError:
+        pass
+    return known
+
+
+def apply_known_shipping(listings):
+    known = load_known_shipping()
+    for l in listings:
+        s = (l["store"] or "").lower()
+        hit = next((v for k, v in known.items() if k == s or k in s or s in k), None)
+        if hit is not None and l["price_per_tire"]:
+            l["ship_per_tire"] = hit
+            l["landed_per_tire"] = round(l["price_per_tire"] + hit, 2)
+            l["ship_note"] = "free shipping" if hit == 0 else f"${hit:.2f}/tire (store_shipping.csv)"
 
 
 def listings_from_shopapp(hits):
@@ -825,6 +849,7 @@ def main():
 
     shop_listings = listings_from_shopapp(hits)
     flag_outliers(shop_listings)
+    apply_known_shipping(shop_listings)
     shop_by_store = defaultdict(list)
     for h in hits.values():
         shop_by_store[h.get("store") or "UNKNOWN STORE"].append(h)
