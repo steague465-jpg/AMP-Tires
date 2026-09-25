@@ -1,0 +1,48 @@
+name: AMP competitor prices
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip:
+        description: "Zip code for shipping quotes"
+        default: "60563"
+      ship_top:
+        description: "Check shipping on N cheapest per size (0 = all)"
+        default: "5"
+  # Uncomment to run automatically every Monday at 7am Eastern:
+  # schedule:
+  #   - cron: "0 11 * * 1"
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run scraper
+        run: |
+          python amp_price_scraper.py \
+            --zip "${{ github.event.inputs.zip || '60563' }}" \
+            --ship-top "${{ github.event.inputs.ship_top || '5' }}"
+
+      - name: Upload spreadsheet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: amp-prices
+          path: |
+            amp_prices.xlsx
+            amp_prices.csv
+            store_domains.csv
+            amp_cache/
+          if-no-files-found: warn
