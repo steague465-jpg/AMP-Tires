@@ -16,6 +16,8 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    env:
+      PYTHONUNBUFFERED: "1"
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +33,7 @@ jobs:
 
       - name: Run scraper
         run: |
-          python amp_price_scraper.py \
+          python -u amp_price_scraper.py \
             --zip "${{ github.event.inputs.zip || '60563' }}" \
             --ship-top "${{ github.event.inputs.ship_top || '5' }}"
 
