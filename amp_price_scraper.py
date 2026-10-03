@@ -344,10 +344,15 @@ def stage_search(headful):
         for i, q in enumerate(queries, 1):
             if q in done:
                 continue
-            try:
-                hits = scrape_search(page, q)
-            except Exception as e:
-                print(f"  [{i}/{len(queries)}] {q!r}: failed ({e})")
+            hits = None
+            for attempt in (1, 2):
+                try:
+                    hits = scrape_search(page, q)
+                    break
+                except Exception as e:
+                    print(f"  [{i}/{len(queries)}] {q!r}: attempt {attempt} failed ({str(e).splitlines()[0]})")
+                    page.wait_for_timeout(5000)
+            if hits is None:
                 continue
             new = 0
             for h in hits:
@@ -362,7 +367,7 @@ def stage_search(headful):
             done.add(q)
             save_json("shopapp_hits.json", all_hits)
             save_json("shopapp_done_queries.json", sorted(done))
-            print(f"  [{i}/{len(queries)}] {q!r}: {len(hits)} results, {new} new AMP listings "
+            print(f"  [{i}/{len(queries)}] {q!r}: {len(hits)} results, {new} new listings "
                   f"(total {len(all_hits)})")
             nap(1.5, 3.0)
         browser.close()
