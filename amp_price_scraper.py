@@ -145,6 +145,10 @@ def classify_nitto(text):
         return "Terra Grappler G2" if re.search(r"\bg2\b", t) else "Terra Grappler G3" if re.search(r"\bg3\b", t) else "Terra Grappler (check G2/G3)"
     if "exo" in t:
         return "Exo Grappler"
+    if "nomad" in t:
+        return "Nomad Grappler"
+    if "dura" in t:
+        return "Dura Grappler"
     if "grappler" in t:
         return "Grappler (check model)"
     return "Other Nitto"
