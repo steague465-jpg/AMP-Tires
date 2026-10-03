@@ -26,6 +26,8 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       PYTHONUNBUFFERED: "1"
     timeout-minutes: 300
@@ -60,3 +62,16 @@ jobs:
             store_domains.csv
             *_cache/
           if-no-files-found: warn
+
+      - name: Save results to the results branch
+        if: always()
+        run: |
+          B="${{ github.event.inputs.brand || 'amp' }}"
+          mkdir -p /tmp/out && cp -r ${B}_cache /tmp/out/ 2>/dev/null || true
+          cp ${B}_prices*.xlsx ${B}_prices*.csv /tmp/out/ 2>/dev/null || true
+          git config user.name "github-actions" && git config user.email "actions@github.com"
+          git fetch origin results 2>/dev/null && git checkout -B results origin/results || git checkout --orphan results
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          mkdir -p "$B" && cp -r /tmp/out/. "$B"/
+          git add "$B" && git commit -m "$B results $(date -u +%F)" && git push origin results || echo "nothing to save"
