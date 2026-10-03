@@ -1,8 +1,13 @@
-name: AMP competitor prices
+name: Competitor prices
 
 on:
   workflow_dispatch:
     inputs:
+      brand:
+        description: "Brand to scrape"
+        type: choice
+        options: [amp, nitto]
+        default: amp
       zip:
         description: "Zip code for shipping quotes"
         default: "60563"
@@ -39,6 +44,7 @@ jobs:
       - name: Run scraper
         run: |
           python -u amp_price_scraper.py \
+            --brand "${{ github.event.inputs.brand || 'amp' }}" \
             --zip "${{ github.event.inputs.zip || '60563' }}" \
             --ship-top "${{ github.event.inputs.ship_top || '5' }}" \
             ${{ (github.event.inputs.mode || 'shopapp-only') == 'shopapp-only' && '--shopapp-only' || '' }}
@@ -47,10 +53,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: amp-prices
+          name: ${{ github.event.inputs.brand || 'amp' }}-prices
           path: |
-            amp_prices*.xlsx
-            amp_prices.csv
+            *_prices*.xlsx
+            *_prices*.csv
             store_domains.csv
-            amp_cache/
+            *_cache/
           if-no-files-found: warn

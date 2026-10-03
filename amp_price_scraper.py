@@ -47,7 +47,7 @@ SHIP_COUNTRY = "United States"
 UNDERCUT = 1.00               # target price = lowest landed price minus this
 
 # Your own store. Anything matching is shown but left out of "lowest competitor".
-OWN_STORE_NAMES = ["wheel tire direct", "naperville wheel", "illini auto tire"]
+OWN_STORE_NAMES = ["wheel tire direct", "naperville wheel", "illini auto tire", "midwest takeoffs"]
 OWN_DOMAINS = ["mwtakeoffs.com", "naperville-wheel-tire.myshopify.com", "wheeltiredirect"]
 
 MODEL_QUERIES = [
@@ -65,6 +65,26 @@ COMMON_SIZES = ["35x12.50R20", "33x12.50R20", "37x13.50R20", "35x12.50R22", "37x
 
 # Shipping per tire you've confirmed for each store (edit store_shipping.csv to add more).
 SHIPPING_FILE = "store_shipping.csv"
+
+# ----------------------------------------------------------------- brands
+BRAND = "amp"
+NITTO_MODELS = ["Ridge Grappler", "Mud Grappler", "Terra Grappler", "Trail Grappler", "Recon Grappler"]
+NITTO_QUERIES = (
+    ["Nitto Grappler", "Nitto tires"]
+    + [f"Nitto {m}" for m in NITTO_MODELS]
+    + ["Nitto Terra Grappler G2", "Nitto Terra Grappler G3", "Nitto Recon Grappler A/T"]
+    + [f"Nitto {m} {r}" for m in NITTO_MODELS for r in [16, 17, 18, 20, 22, 24, 26]]
+    + [f"Nitto {s}" for s in ["35x12.50R20", "33x12.50R20", "37x12.50R17", "35x12.50R17", "37x13.50R20",
+                               "35x12.50R22", "37x13.50R22", "35x12.50R18", "285/70R17", "275/70R18",
+                               "275/65R20", "285/65R18", "265/70R17", "295/70R18", "305/55R20"]]
+)
+
+
+def set_brand(name):
+    global BRAND, CACHE_DIR
+    BRAND = name
+    CACHE_DIR = f"{name}_cache" if name != "amp" else "amp_cache"
+
 
 CACHE_DIR = "amp_cache"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -111,7 +131,28 @@ def parse_load(text):
     return ""
 
 
+def classify_nitto(text):
+    t = " " + (text or "").lower().replace("-", " ") + " "
+    if "ridge" in t:
+        return "Ridge Grappler"
+    if "mud grap" in t or "mudgrap" in t:
+        return "Mud Grappler"
+    if "trail grap" in t:
+        return "Trail Grappler"
+    if "recon" in t:
+        return "Recon Grappler"
+    if "terra" in t:
+        return "Terra Grappler G2" if re.search(r"\bg2\b", t) else "Terra Grappler G3" if re.search(r"\bg3\b", t) else "Terra Grappler (check G2/G3)"
+    if "exo" in t:
+        return "Exo Grappler"
+    if "grappler" in t:
+        return "Grappler (check model)"
+    return "Other Nitto"
+
+
 def classify_model(text):
+    if BRAND == "nitto":
+        return classify_nitto(text)
     t = " " + (text or "").lower().replace("-", " ") + " "
     if "r/t" in t or re.search(r"\brt\b", t) or "rugged terrain" in t:
         return "R/T"
@@ -139,6 +180,13 @@ def parse_qty(text):
 
 def looks_like_amp_tire(title, vendor="", product_type="", handle=""):
     blob = f"{title} {vendor} {product_type} {handle}".lower()
+    if BRAND == "nitto":
+        if "nitto" not in blob and "grappler" not in blob:
+            return False
+        if any(w in blob for w in ["package", " kit", "wheel and tire", "wheel & tire", "w/ tires", "deposit",
+                                   " wheels ", " wheel ", "rims", "oem wheels", "tpms"]):
+            return False
+        return bool(parse_size(f"{title} {handle.replace('-', ' ')}"))
     if "amp research" in blob or "power step" in blob or "powerstep" in blob or "bedstep" in blob:
         return False
     if any(w in blob for w in ["package", " kit", "wheel and tire", "wheel & tire", "w/ tires"]):
@@ -230,6 +278,8 @@ def launch_browser(p, headful):
 
 # ----------------------------------------------------------------- stage 1: shop.app search
 def build_queries():
+    if BRAND == "nitto":
+        return list(dict.fromkeys(NITTO_QUERIES))
     q = list(MODEL_QUERIES)
     q += [f"{m} {r}" for m in RIM_MODELS for r in RIMS]
     q += [f"AMP {s}" for s in COMMON_SIZES]
@@ -836,10 +886,14 @@ def main():
     ap.add_argument("--zip", default=SHIP_ZIP, help="zip code for shipping quotes")
     ap.add_argument("--shopapp-only", action="store_true",
                     help="only use shop.app listing data (fast, no store sites, no shipping check)")
-    ap.add_argument("--out", default="amp_prices.xlsx")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--brand", default="amp", choices=["amp", "nitto"])
     args = ap.parse_args()
 
     SHIP_ZIP = args.zip
+    set_brand(args.brand)
+    if not args.out:
+        args.out = f"{args.brand}_prices.xlsx"
 
     print("Step 1/4: searching shop.app")
     hits = load_json("shopapp_hits.json", {}) if args.skip_search else stage_search(args.headful)
